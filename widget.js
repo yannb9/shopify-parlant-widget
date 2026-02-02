@@ -3,7 +3,7 @@
     // Get query params
     const urlParams = new URLSearchParams(window.location.search);
     const agentId = urlParams.get('agentId') || 'default-agent';
-    const serverAddress = urlParams.get('server') || 'http://locahost:8800';
+    const serverAddress = urlParams.get('server') || 'http://localhost:8800';
 
     // Create chat container
     const container = document.createElement('div');
