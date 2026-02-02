@@ -1,6 +1,6 @@
 // widget.js
 (function () {
-    // Get query params
+    // Get query params 
     const urlParams = new URLSearchParams(window.location.search);
     const agentId = urlParams.get('agentId') || 'default-agent';
     const serverAddress = urlParams.get('server') || 'https://prod.parlant.ai';
