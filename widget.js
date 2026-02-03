@@ -1,14 +1,14 @@
 // widget.js
 (function () {
-    // Get query params
-    const urlParams = new URLSearchParams(window.location.search);
-    const agentId = urlParams.get('agentId') || 'default-agent';
-    const serverAddress = urlParams.get('server') || 'http://localhost:8800';
+  // Get query params
+  const urlParams = new URLSearchParams(window.location.search);
+  const agentId = urlParams.get('agentId') || 'B6Tepz5r5h';
+  const serverAddress = urlParams.get('server') || 'http://localhost:8800';
 
-    // Create chat container
-    const container = document.createElement('div');
-    container.className = 'chat-container';
-    container.innerHTML = `
+  // Create chat container
+  const container = document.createElement('div');
+  container.className = 'chat-container';
+  container.innerHTML = `
     <div class="chat-header"><h3>Customer Support Chat</h3></div>
     <div id="chat-status">Initializing chat...</div>
     <div id="chat-messages" class="chat-messages"></div>
@@ -17,11 +17,11 @@
       <button id="send-button" disabled>Send</button>
     </div>
   `;
-    document.body.appendChild(container);
+  document.body.appendChild(container);
 
-    // Load CSS dynamically
-    const style = document.createElement('style');
-    style.innerHTML = `
+  // Load CSS dynamically
+  const style = document.createElement('style');
+  style.innerHTML = `
     .chat-container { position: fixed; bottom: 20px; right: 20px; width: 350px; border: 1px solid #ddd; border-radius: 8px; font-family: Arial; background: white; z-index: 10000; }
     .chat-header { background: #007bff; color: white; padding: 10px; text-align: center; }
     .chat-messages { height: 300px; overflow-y: auto; padding: 10px; background: #f8f9fa; }
@@ -33,12 +33,12 @@
     .chat-input button { padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
     .chat-input button:disabled { background: #ccc; cursor: not-allowed; }
   `;
-    document.head.appendChild(style);
+  document.head.appendChild(style);
 
-    // Import ParlantClient dynamically
-    const importScript = document.createElement('script');
-    importScript.type = 'module';
-    importScript.textContent = `
+  // Import ParlantClient dynamically
+  const importScript = document.createElement('script');
+  importScript.type = 'module';
+  importScript.textContent = `
     import { ParlantClient } from 'https://esm.sh/parlant-client';
 
     const client = new ParlantClient({ environment: '${serverAddress}' });
@@ -96,5 +96,5 @@
 
     init();
   `;
-    document.body.appendChild(importScript);
+  document.body.appendChild(importScript);
 })();
