@@ -3,7 +3,7 @@
   // Get query params
   const urlParams = new URLSearchParams(window.location.search);
   const agentId = urlParams.get('agentId') || 'B6Tepz5r5h';
-  const serverAddress = urlParams.get('server') || 'http://localhost:8800';
+  const serverAddress = urlParams.get('server') || 'https://petiolular-sabra-unhesitatively.ngrok-free.dev';
 
   // Create chat container
   const container = document.createElement('div');
