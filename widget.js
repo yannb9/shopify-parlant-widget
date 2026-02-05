@@ -1,28 +1,204 @@
 (function () {
   'use strict';
 
-  console.log('Parlant widget loading...');
+  console.log('Parlant widget initializing...');
 
   // Configuration
   const CONFIG = {
-    parlantServer: ' https://petiolular-sabra-unhesitatively.ngrok-free.dev',
-    agentId: 'B6Tepz5r5h'
+    serverAddress: ' https://petiolular-sabra-unhesitatively.ngrok-free.dev',
+    agentId: 'B6Tepz5r5h',
   };
 
+  // State
   let sessionId = null;
   let lastOffset = 0;
   let isPolling = false;
 
-  // Create widget UI
+  // DOM elements (will be set after creation)
+  let chatMessages, messageInput, sendButton, chatStatus;
+
+  // Update chat status
+  function updateStatus(message) {
+    if (chatStatus) {
+      chatStatus.textContent = message;
+    }
+  }
+
+  // Add message to chat UI
+  function addMessageToUI(message, source) {
+    if (!chatMessages) return;
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message';
+
+    if (source === 'customer') {
+      messageDiv.classList.add('customer-message');
+    } else {
+      messageDiv.classList.add('agent-message');
+    }
+
+    messageDiv.textContent = message;
+    chatMessages.appendChild(messageDiv);
+
+    // Auto-scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  // Send message function
+  async function sendMessage() {
+    if (!messageInput || !sessionId) return;
+
+    const message = messageInput.value.trim();
+    if (!message) return;
+
+    try {
+      // Disable input while sending
+      messageInput.disabled = true;
+      if (sendButton) sendButton.disabled = true;
+
+      // Add message to UI immediately
+      addMessageToUI(message, 'customer');
+
+      // Send to Parlant
+      const response = await fetch(`${CONFIG.serverAddress}/sessions/${sessionId}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          kind: 'message',
+          message: message,
+          source: 'customer'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Clear input
+      messageInput.value = '';
+
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      updateStatus('Failed to send message');
+    } finally {
+      // Re-enable input
+      if (messageInput) messageInput.disabled = false;
+      if (sendButton) sendButton.disabled = false;
+      if (messageInput) messageInput.focus();
+    }
+  }
+
+  // Long polling for new events
+  async function pollForEvents() {
+    if (!sessionId || isPolling) return;
+
+    isPolling = true;
+
+    try {
+      const response = await fetch(
+        `${CONFIG.serverAddress}/sessions/${sessionId}/events?wait_for_data=60&min_offset=${lastOffset}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const events = await response.json();
+
+      if (events && events.length > 0) {
+        // Process new events
+        events.forEach(event => {
+          if (event.kind === 'message' && event.source !== 'customer') {
+            addMessageToUI(event.data.message, event.source);
+          }
+        });
+
+        // Update offset for next call
+        const lastEvent = events[events.length - 1];
+        lastOffset = lastEvent.offset + 1;
+
+        updateStatus('');
+      }
+
+    } catch (error) {
+      console.error('Polling error:', error);
+      updateStatus('Connection error - retrying...');
+    } finally {
+      isPolling = false;
+
+      // Continue polling
+      if (sessionId) {
+        setTimeout(pollForEvents, 100);
+      }
+    }
+  }
+
+  // Initialize chat session
+  async function initializeChat() {
+    try {
+      updateStatus('Starting chat session...');
+
+      const response = await fetch(`${CONFIG.serverAddress}/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          agent_id: CONFIG.agentId,
+          title: `New Session - ${new Date().toLocaleString()}`,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const session = await response.json();
+      sessionId = session.id;
+
+      console.log('Session created:', sessionId);
+      updateStatus('Chat ready!');
+
+      // Enable input
+      if (messageInput) {
+        messageInput.disabled = false;
+        messageInput.focus();
+      }
+      if (sendButton) {
+        sendButton.disabled = false;
+      }
+
+      // Start polling for events
+      pollForEvents();
+
+    } catch (error) {
+      console.error('Failed to initialize chat:', error);
+      updateStatus('Failed to start chat. Please refresh the page.');
+    }
+  }
+
+  // Create the widget UI
   function createWidget() {
     const container = document.createElement('div');
-    container.id = 'parlant-chat-widget';
+    container.className = 'chat-container';
     container.innerHTML = `
       <style>
-        #parlant-chat-bubble {
+        .chat-container {
           position: fixed;
           bottom: 20px;
           right: 20px;
+          z-index: 999999;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .chat-bubble {
           width: 60px;
           height: 60px;
           background: #0066FF;
@@ -32,296 +208,154 @@
           justify-content: center;
           cursor: pointer;
           box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          z-index: 999999;
           font-size: 28px;
           transition: transform 0.2s;
         }
-        #parlant-chat-bubble:hover {
+        .chat-bubble:hover {
           transform: scale(1.1);
         }
-        #parlant-chat-window {
-          position: fixed;
-          bottom: 90px;
-          right: 20px;
+        .chat-window {
+          position: absolute;
+          bottom: 70px;
+          right: 0;
           width: 350px;
           height: 500px;
           background: white;
           border-radius: 12px;
           box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-          z-index: 999998;
           display: none;
           flex-direction: column;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
-        #parlant-chat-window.open {
+        .chat-window.open {
           display: flex;
         }
-        .parlant-header {
-          padding: 20px;
+        .chat-header {
           background: #0066FF;
           color: white;
+          padding: 15px;
           border-radius: 12px 12px 0 0;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
         }
-        .parlant-header h3 {
+        .chat-header h3 {
           margin: 0;
           font-size: 18px;
           font-weight: 600;
         }
-        .parlant-close {
-          cursor: pointer;
-          font-size: 24px;
-          line-height: 1;
+        #chat-status {
+          font-style: italic;
+          color: #fff;
+          padding: 5px 0;
+          font-size: 12px;
+          min-height: 18px;
         }
-        #parlant-messages {
+        #chat-messages {
           flex: 1;
           overflow-y: auto;
           padding: 15px;
           background: #f8f9fa;
         }
-        .parlant-message {
-          margin: 8px 0;
-          padding: 10px 14px;
+        .message {
+          margin: 10px 0;
+          padding: 10px;
           border-radius: 18px;
           max-width: 80%;
-          word-wrap: break-word;
         }
-        .parlant-message.customer {
+        .customer-message {
           background: #0066FF;
           color: white;
           margin-left: auto;
           text-align: right;
         }
-        .parlant-message.agent {
+        .agent-message {
           background: white;
-          color: #333;
-          border: 1px solid #e0e0e0;
+          border: 1px solid #ddd;
         }
-        .parlant-input-area {
+        .chat-input {
+          display: flex;
           padding: 15px;
-          border-top: 1px solid #e0e0e0;
           background: white;
           border-radius: 0 0 12px 12px;
         }
-        #parlant-input {
-          width: 100%;
+        .chat-input input {
+          flex: 1;
           padding: 10px;
           border: 1px solid #ddd;
           border-radius: 20px;
+          margin-right: 10px;
           font-size: 14px;
           outline: none;
         }
-        #parlant-input:focus {
+        .chat-input input:focus {
           border-color: #0066FF;
         }
-        .parlant-status {
-          font-size: 12px;
-          color: #666;
-          font-style: italic;
-          padding: 5px 15px;
+        .chat-input button {
+          padding: 10px 20px;
+          background: #0066FF;
+          color: white;
+          border: none;
+          border-radius: 20px;
+          cursor: pointer;
+          font-size: 14px;
+        }
+        .chat-input button:disabled {
+          background: #ccc;
+          cursor: not-allowed;
         }
       </style>
       
-      <div id="parlant-chat-bubble">💬</div>
-      <div id="parlant-chat-window">
-        <div class="parlant-header">
-          <h3>Chat with us</h3>
-          <span class="parlant-close" id="parlant-close">×</span>
+      <div class="chat-bubble" id="chat-bubble">💬</div>
+      <div class="chat-window" id="chat-window">
+        <div class="chat-header">
+          <h3>Customer Support</h3>
+          <div id="chat-status">Initializing...</div>
         </div>
-        <div class="parlant-status" id="parlant-status"></div>
-        <div id="parlant-messages"></div>
-        <div class="parlant-input-area">
-          <input 
-            type="text" 
-            id="parlant-input" 
-            placeholder="Type a message..." 
+        <div id="chat-messages"></div>
+        <div class="chat-input">
+          <input
+            type="text"
+            id="message-input"
+            placeholder="Type your message..."
             disabled
           />
+          <button id="send-button" disabled>Send</button>
         </div>
       </div>
     `;
 
     document.body.appendChild(container);
-    setupEventHandlers();
-  }
 
-  function setupEventHandlers() {
-    const bubble = document.getElementById('parlant-chat-bubble');
-    const chatWindow = document.getElementById('parlant-chat-window');
-    const closeBtn = document.getElementById('parlant-close');
-    const input = document.getElementById('parlant-input');
+    // Get DOM references
+    chatMessages = document.getElementById('chat-messages');
+    messageInput = document.getElementById('message-input');
+    sendButton = document.getElementById('send-button');
+    chatStatus = document.getElementById('chat-status');
 
-    bubble.addEventListener('click', async () => {
-      chatWindow.classList.add('open');
+    const chatBubble = document.getElementById('chat-bubble');
+    const chatWindow = document.getElementById('chat-window');
 
-      if (!sessionId) {
-        await initSession();
+    // Event listeners
+    chatBubble.addEventListener('click', () => {
+      const isOpen = chatWindow.classList.toggle('open');
+      if (isOpen && !sessionId) {
+        initializeChat();
       }
     });
 
-    closeBtn.addEventListener('click', () => {
-      chatWindow.classList.remove('open');
-    });
+    sendButton.addEventListener('click', sendMessage);
 
-    input.addEventListener('keypress', async (e) => {
-      if (e.key === 'Enter' && e.target.value.trim()) {
-        await sendMessage(e.target.value);
-        e.target.value = '';
+    messageInput.addEventListener('keypress', (event) => {
+      if (event.key === 'Enter') {
+        sendMessage();
       }
     });
   }
 
-  function updateStatus(message) {
-    const statusEl = document.getElementById('parlant-status');
-    if (statusEl) {
-      statusEl.textContent = message;
-    }
-  }
-
-  function addMessage(text, source) {
-    const messagesDiv = document.getElementById('parlant-messages');
-    const msgEl = document.createElement('div');
-    msgEl.className = 'parlant-message ' + source;
-    msgEl.textContent = text;
-    messagesDiv.appendChild(msgEl);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-  }
-
-  // Parlant API calls using native fetch
-  async function createParlantSession() {
-    const response = await fetch(`${CONFIG.parlantServer}/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        agent_id: CONFIG.agentId,
-        title: 'Customer Chat - ' + new Date().toLocaleString()
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to create session');
-    }
-
-    return await response.json();
-  }
-
-  async function sendEventToParlant(sessionId, message) {
-    const response = await fetch(`${CONFIG.parlantServer}/sessions/${sessionId}/events`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        kind: 'message',
-        source: 'customer',
-        data: {
-          message: message
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to send message');
-    }
-
-    return await response.json();
-  }
-
-  async function getEventsFromParlant(sessionId, minOffset) {
-    const params = new URLSearchParams({
-      min_offset: minOffset.toString(),
-      wait_for_data: '30'
-    });
-
-    const response = await fetch(
-      `${CONFIG.parlantServer}/sessions/${sessionId}/events?${params}`
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch events');
-    }
-
-    return await response.json();
-  }
-
-  async function initSession() {
-    try {
-      updateStatus('Starting chat...');
-
-      const session = await createParlantSession();
-      sessionId = session.id;
-
-      console.log('Session created:', sessionId);
-      updateStatus('');
-
-      const input = document.getElementById('parlant-input');
-      input.disabled = false;
-      input.focus();
-
-      pollForEvents();
-
-    } catch (error) {
-      console.error('Failed to create session:', error);
-      updateStatus('Failed to start chat. Please try again.');
-    }
-  }
-
-  async function sendMessage(message) {
-    if (!sessionId) return;
-
-    try {
-      addMessage(message, 'customer');
-
-      await sendEventToParlant(sessionId, message);
-
-      updateStatus('Agent is thinking...');
-
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      updateStatus('Failed to send message');
-    }
-  }
-
-  async function pollForEvents() {
-    if (!sessionId || isPolling) return;
-
-    isPolling = true;
-
-    while (sessionId) {
-      try {
-        const events = await getEventsFromParlant(sessionId, lastOffset);
-
-        if (events && events.length > 0) {
-          events.forEach(event => {
-            if (event.kind === 'message' && event.source !== 'customer') {
-              addMessage(event.data.message, 'agent');
-              updateStatus('');
-            }
-            lastOffset = Math.max(lastOffset, event.offset + 1);
-          });
-        }
-
-      } catch (error) {
-        console.error('Polling error:', error);
-        updateStatus('Connection error - retrying...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-    }
-
-    isPolling = false;
-  }
-
-  // Initialize
+  // Initialize when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', createWidget);
   } else {
     createWidget();
   }
 
-  console.log('Parlant widget initialized!');
+  console.log('Parlant widget loaded successfully');
 
 })();
