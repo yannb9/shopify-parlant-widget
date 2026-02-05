@@ -5,7 +5,7 @@
 
   // Configuration
   const CONFIG = {
-    parlantServer: 'https://petiolular-sabra-unhesitatively.ngrok-free.app',
+    parlantServer: 'https://petiolular-sabra-unhesitatively.ngrok-free.dev',
     agentId: 'B6Tepz5r5h'
   };
 
