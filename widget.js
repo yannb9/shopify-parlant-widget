@@ -5,37 +5,13 @@
 
   // Configuration
   const CONFIG = {
-    parlantServer: 'https://petiolular-sabra-unhesitatively.ngrok-free.dev',
+    parlantServer: ' https://petiolular-sabra-unhesitatively.ngrok-free.dev',
     agentId: 'B6Tepz5r5h'
   };
 
   let sessionId = null;
   let lastOffset = 0;
   let isPolling = false;
-  let parlantClient = null;
-
-  // Load Parlant client
-  function loadParlantClient() {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.type = 'module';
-      script.textContent = `
-        import { ParlantClient } from 'https://cdn.jsdelivr.net/npm/parlant-client@latest/+esm';
-        window.__ParlantClient = ParlantClient;
-        window.dispatchEvent(new Event('parlant-ready'));
-      `;
-
-      window.addEventListener('parlant-ready', () => {
-        parlantClient = new window.__ParlantClient({
-          environment: CONFIG.parlantServer
-        });
-        resolve();
-      }, { once: true });
-
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  }
 
   // Create widget UI
   function createWidget() {
@@ -85,11 +61,19 @@
           background: #0066FF;
           color: white;
           border-radius: 12px 12px 0 0;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
         }
         .parlant-header h3 {
           margin: 0;
           font-size: 18px;
           font-weight: 600;
+        }
+        .parlant-close {
+          cursor: pointer;
+          font-size: 24px;
+          line-height: 1;
         }
         #parlant-messages {
           flex: 1;
@@ -144,6 +128,7 @@
       <div id="parlant-chat-window">
         <div class="parlant-header">
           <h3>Chat with us</h3>
+          <span class="parlant-close" id="parlant-close">×</span>
         </div>
         <div class="parlant-status" id="parlant-status"></div>
         <div id="parlant-messages"></div>
@@ -165,14 +150,19 @@
   function setupEventHandlers() {
     const bubble = document.getElementById('parlant-chat-bubble');
     const chatWindow = document.getElementById('parlant-chat-window');
+    const closeBtn = document.getElementById('parlant-close');
     const input = document.getElementById('parlant-input');
 
     bubble.addEventListener('click', async () => {
-      chatWindow.classList.toggle('open');
+      chatWindow.classList.add('open');
 
-      if (!sessionId && chatWindow.classList.contains('open')) {
+      if (!sessionId) {
         await initSession();
       }
+    });
+
+    closeBtn.addEventListener('click', () => {
+      chatWindow.classList.remove('open');
     });
 
     input.addEventListener('keypress', async (e) => {
@@ -199,18 +189,73 @@
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
   }
 
+  // Parlant API calls using native fetch
+  async function createParlantSession() {
+    const response = await fetch(`${CONFIG.parlantServer}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        agent_id: CONFIG.agentId,
+        title: 'Customer Chat - ' + new Date().toLocaleString()
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to create session');
+    }
+
+    return await response.json();
+  }
+
+  async function sendEventToParlant(sessionId, message) {
+    const response = await fetch(`${CONFIG.parlantServer}/sessions/${sessionId}/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        kind: 'message',
+        source: 'customer',
+        data: {
+          message: message
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to send message');
+    }
+
+    return await response.json();
+  }
+
+  async function getEventsFromParlant(sessionId, minOffset) {
+    const params = new URLSearchParams({
+      min_offset: minOffset.toString(),
+      wait_for_data: '30'
+    });
+
+    const response = await fetch(
+      `${CONFIG.parlantServer}/sessions/${sessionId}/events?${params}`
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch events');
+    }
+
+    return await response.json();
+  }
+
   async function initSession() {
     try {
       updateStatus('Starting chat...');
 
-      const session = await parlantClient.sessions.create({
-        agentId: CONFIG.agentId,
-        title: 'Customer Chat - ' + new Date().toLocaleString()
-      });
-
+      const session = await createParlantSession();
       sessionId = session.id;
-      console.log('Session created:', sessionId);
 
+      console.log('Session created:', sessionId);
       updateStatus('');
 
       const input = document.getElementById('parlant-input');
@@ -221,7 +266,7 @@
 
     } catch (error) {
       console.error('Failed to create session:', error);
-      updateStatus('Failed to start chat');
+      updateStatus('Failed to start chat. Please try again.');
     }
   }
 
@@ -231,11 +276,7 @@
     try {
       addMessage(message, 'customer');
 
-      await parlantClient.sessions.createEvent(sessionId, {
-        kind: 'message',
-        source: 'customer',
-        message: message
-      });
+      await sendEventToParlant(sessionId, message);
 
       updateStatus('Agent is thinking...');
 
@@ -252,10 +293,7 @@
 
     while (sessionId) {
       try {
-        const events = await parlantClient.sessions.listEvents(sessionId, {
-          minOffset: lastOffset,
-          waitForData: 30
-        });
+        const events = await getEventsFromParlant(sessionId, lastOffset);
 
         if (events && events.length > 0) {
           events.forEach(event => {
@@ -278,20 +316,12 @@
   }
 
   // Initialize
-  async function init() {
-    try {
-      await loadParlantClient();
-      createWidget();
-      console.log('Parlant widget ready!');
-    } catch (error) {
-      console.error('Failed to initialize widget:', error);
-    }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', createWidget);
+  } else {
+    createWidget();
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  console.log('Parlant widget initialized!');
 
 })();
